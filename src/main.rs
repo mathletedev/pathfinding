@@ -28,9 +28,8 @@ async fn main() {
     let mut last_time = get_time();
     let mut running = false;
     let mut instant = false;
-
-    let mut needs_reset = true;
-    let mut no_path = false;
+    let mut reset = true;
+    let mut end = false;
 
     loop {
         // resizing
@@ -43,12 +42,12 @@ async fn main() {
             if end_pos.y >= rows as usize {
                 end_pos.y = rows as usize - 1;
             }
-            needs_reset = true;
+            reset = true;
         }
         if is_key_pressed(KeyCode::Down) {
             rows += 1;
             walls.push(vec![false; cols as usize]);
-            needs_reset = true;
+            reset = true;
         }
         if is_key_pressed(KeyCode::Left) && cols > 0 {
             cols -= 1;
@@ -61,14 +60,14 @@ async fn main() {
             if end_pos.x >= cols as usize {
                 end_pos.x = cols as usize - 1;
             }
-            needs_reset = true;
+            reset = true;
         }
         if is_key_pressed(KeyCode::Right) {
             cols += 1;
             walls.iter_mut().for_each(|row| {
                 row.push(false);
             });
-            needs_reset = true;
+            reset = true;
         }
 
         // fps control
@@ -81,14 +80,19 @@ async fn main() {
 
         // pathfinding control
         if is_key_pressed(KeyCode::Space) {
-            if curr_pos == end_pos || no_path {
-                needs_reset = true;
-            } else {
-                running = !running;
+            if instant {
+                return;
+            }
+            running = !running;
+            if end {
+                reset = true;
             }
         }
         if is_key_pressed(KeyCode::Enter) {
             instant = !instant;
+            if !instant {
+                reset = true;
+            }
         }
 
         let cell_size = (screen_width() / cols as f32).min(screen_height() / rows as f32);
@@ -100,14 +104,14 @@ async fn main() {
                 y: (mouse_position().1 / cell_size).floor() as usize,
             };
             curr_pos = start_pos;
-            needs_reset = true;
+            reset = true;
         }
         if is_key_pressed(KeyCode::E) {
             end_pos = Vector2 {
                 x: (mouse_position().0 / cell_size).floor() as usize,
                 y: (mouse_position().1 / cell_size).floor() as usize,
             };
-            needs_reset = true;
+            reset = true;
         }
 
         if is_mouse_button_down(MouseButton::Left) {
@@ -116,30 +120,31 @@ async fn main() {
             // TODO: check if wall is on important cell
             if x < cols as usize && y < rows as usize {
                 walls[y][x] = true;
-                needs_reset = true;
+                reset = true;
             }
         } else if is_mouse_button_down(MouseButton::Right) {
             let x = (mouse_position().0 / cell_size).floor() as usize;
             let y = (mouse_position().1 / cell_size).floor() as usize;
             if x < cols as usize && y < rows as usize {
                 walls[y][x] = false;
-                needs_reset = true;
+                reset = true;
             }
         }
         if is_key_pressed(KeyCode::Backspace) {
             walls = vec![vec![false; cols as usize]; rows as usize];
+            reset = true;
         }
 
-        if needs_reset {
-            needs_reset = false;
+        if reset {
+            reset = false;
             curr_pos = start_pos;
             running = false;
-            no_path = false;
+            end = false;
 
             pathfinders[pathfinder_idx].init(rows, cols, start_pos, end_pos, walls.clone());
         }
 
-        if get_time() > last_time + 1.0 / fps && running {
+        if instant && !end || running && get_time() > last_time + 1.0 / fps {
             last_time = get_time();
 
             loop {
@@ -148,16 +153,17 @@ async fn main() {
                         curr_pos = pos;
                         if curr_pos == end_pos {
                             running = false;
+                            end = true;
                         }
                     }
                     None => {
                         curr_pos = start_pos;
                         running = false;
-                        no_path = true;
+                        end = true;
                     }
                 }
 
-                if !instant || !running {
+                if !instant || end {
                     break;
                 }
             }
@@ -210,8 +216,8 @@ async fn main() {
                 draw_cell(pos, cell_size, PURPLE);
             });
 
-        draw_cell(curr_pos, cell_size, WHITE);
         draw_cell(start_pos, cell_size, BLUE);
+        draw_cell(curr_pos, cell_size, WHITE);
         draw_cell(end_pos, cell_size, RED);
 
         if DEBUG {
