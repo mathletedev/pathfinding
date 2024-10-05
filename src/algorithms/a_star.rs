@@ -12,6 +12,7 @@ struct AStarNode {
     pos: Vector2<usize>,
     g_cost: i32, // distance from starting node
     h_cost: i32, // distance from ending node
+    prev_pos: Option<Vector2<usize>>,
 }
 
 impl AStarNode {
@@ -28,7 +29,12 @@ impl PartialEq for AStarNode {
 
 impl Ord for AStarNode {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.f_cost().cmp(&self.f_cost())
+        let f = other.f_cost().cmp(&self.f_cost());
+        if f != Ordering::Equal {
+            return f;
+        }
+
+        other.h_cost.cmp(&self.h_cost)
     }
 }
 
@@ -38,12 +44,6 @@ impl PartialOrd for AStarNode {
     }
 }
 
-#[derive(Clone)]
-struct AStarNodeData {
-    g_cost: i32,
-    prev_pos: Option<Vector2<usize>>,
-}
-
 fn distance(pos1: &Vector2<usize>, pos2: &Vector2<usize>) -> i32 {
     let dx = (pos1.x as i32 - pos2.x as i32).abs();
     let dy = (pos1.y as i32 - pos2.y as i32).abs();
@@ -51,13 +51,13 @@ fn distance(pos1: &Vector2<usize>, pos2: &Vector2<usize>) -> i32 {
     let min = dx.min(dy);
     let max = dx.max(dy);
 
-    min * DIAGONAL_COST + max * STRAIGHT_COST
+    min * DIAGONAL_COST + (max - min) * STRAIGHT_COST
 }
 
 pub struct AStar {
     frontier: BinaryHeap<AStarNode>,
     curr_node: Option<AStarNode>,
-    state: Vec<Vec<AStarNodeData>>,
+    state: Vec<Vec<AStarNode>>,
 
     rows: i32,
     cols: i32,
@@ -93,22 +93,30 @@ impl Pathfinder for AStar {
             pos: start_pos,
             g_cost: 0,
             h_cost: distance(&start_pos, &end_pos),
+            prev_pos: None,
         });
 
-        self.state = vec![
-            vec![
-                AStarNodeData {
-                    g_cost: i32::MAX,
-                    prev_pos: None,
+        self.curr_node = None;
+
+        self.state.clear();
+        (0..rows).for_each(|i| {
+            let mut row = vec![];
+            (0..cols).for_each(|j| {
+                let pos = Vector2 {
+                    x: j as usize,
+                    y: i as usize,
                 };
-                cols as usize
-            ];
-            rows as usize
-        ];
-        self.state[start_pos.y][start_pos.x] = AStarNodeData {
-            g_cost: 0,
-            prev_pos: None,
-        };
+
+                row.push(AStarNode {
+                    pos,
+                    g_cost: i32::MAX,
+                    h_cost: distance(&end_pos, &pos),
+                    prev_pos: None,
+                });
+            });
+            self.state.push(row);
+        });
+        self.state[start_pos.y][start_pos.x].g_cost = 0;
 
         self.rows = rows;
         self.cols = cols;
@@ -134,63 +142,43 @@ impl Pathfinder for AStar {
         }
 
         // cannot move these values out of self
-        let state = self.state.clone();
-        let rows = self.rows;
-        let cols = self.cols;
-        let end_pos = self.end_pos;
-        let walls = &self.walls;
+        (-1..=1).for_each(|i: i32| {
+            (-1..=1).for_each(|j: i32| {
+                if i == 0 && j == 0 {
+                    return;
+                }
 
-        (-1..=1)
-            .flat_map(move |i: i32| {
-                let moved_state = state.clone();
+                let x = curr_node.pos.x as i32 + i;
+                let y = curr_node.pos.y as i32 + j;
 
-                (-1..=1).flat_map(move |j: i32| {
-                    if i == 0 && j == 0 {
-                        return None;
-                    }
+                if x < 0
+                    || y < 0
+                    || x >= self.cols
+                    || y >= self.rows
+                    || self.walls[y as usize][x as usize]
+                {
+                    return;
+                }
 
-                    let x = curr_node.pos.x as i32 + i;
-                    let y = curr_node.pos.y as i32 + j;
-
-                    if x < 0 || y < 0 || x >= cols || y >= rows {
-                        return None;
-                    }
-
-                    if walls[y as usize][x as usize] {
-                        return None;
-                    }
-
-                    let pos = Vector2 {
-                        x: x as usize,
-                        y: y as usize,
+                let g_cost = curr_node.g_cost
+                    + if i.abs() + j.abs() == 2 {
+                        DIAGONAL_COST
+                    } else {
+                        STRAIGHT_COST
                     };
 
-                    let g_cost = curr_node.g_cost
-                        + if i.abs() + j.abs() == 2 {
-                            DIAGONAL_COST
-                        } else {
-                            STRAIGHT_COST
-                        };
+                let adj_node = &mut self.state[y as usize][x as usize];
 
-                    // don't backtrack
-                    if g_cost >= moved_state[pos.y][pos.x].g_cost {
-                        return None;
-                    }
+                // don't backtrack
+                if g_cost >= adj_node.g_cost {
+                    return;
+                }
 
-                    Some(AStarNode {
-                        pos,
-                        g_cost,
-                        h_cost: distance(&end_pos, &pos),
-                    })
-                })
+                adj_node.g_cost = g_cost;
+                adj_node.prev_pos = Some(curr_node.pos);
+                self.frontier.push(adj_node.clone());
             })
-            .for_each(|node| {
-                self.state[node.pos.y][node.pos.x] = AStarNodeData {
-                    g_cost: node.g_cost,
-                    prev_pos: Some(curr_node.pos),
-                };
-                self.frontier.push(node)
-            });
+        });
 
         Some(curr_node.pos)
     }
@@ -223,6 +211,23 @@ impl Pathfinder for AStar {
         self.state
             .iter()
             .map(|row| row.iter().map(|v| v.g_cost != i32::MAX).collect())
+            .collect()
+    }
+
+    fn get_state(&self) -> Vec<Vec<Option<String>>> {
+        self.state
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|v| {
+                        if v.g_cost == i32::MAX {
+                            None
+                        } else {
+                            Some(format!("{}|{}", v.g_cost, v.h_cost))
+                        }
+                    })
+                    .collect()
+            })
             .collect()
     }
 

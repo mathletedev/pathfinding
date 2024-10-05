@@ -18,5 +18,7 @@ pub trait Pathfinder {
 
     fn get_visited(&self) -> Vec<Vec<bool>>;
 
+    fn get_state(&self) -> Vec<Vec<Option<String>>>;
+
     fn deinit(&mut self);
 }
