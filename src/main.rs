@@ -13,8 +13,8 @@ async fn main() {
 
     let mut rows = 20i32;
     let mut cols = 20i32;
-    let mut start_pos = Vector2 { x: 0, y: 0 };
-    let mut end_pos = Vector2 { x: 19, y: 19 };
+    let mut start_pos = Vector2 { x: 3, y: 3 };
+    let mut end_pos = Vector2 { x: 16, y: 16 };
     let mut walls = vec![vec![false; cols as usize]; rows as usize];
 
     let mut curr_pos = start_pos;
@@ -22,18 +22,17 @@ async fn main() {
     let mut pathfinders: Vec<Box<dyn Pathfinder>> = vec![a_star];
     let pathfinder_idx = 0;
 
-    let mut fps = 100f64;
+    let mut fps = 1f64;
     let mut last_time = get_time();
     let mut running = false;
+    let mut instant = false;
 
     let mut needs_reset = true;
+    let mut no_path = false;
 
     loop {
-        if is_key_pressed(KeyCode::Up) {
-            rows += 1;
-            needs_reset = true;
-        }
-        if is_key_pressed(KeyCode::Down) && rows > 0 {
+        // BUG: app crashes if window is downsized after finding path
+        if is_key_pressed(KeyCode::Up) && rows > 0 {
             rows -= 1;
             walls.pop();
             if start_pos.y >= rows as usize {
@@ -44,8 +43,9 @@ async fn main() {
             }
             needs_reset = true;
         }
-        if is_key_pressed(KeyCode::Right) {
-            cols += 1;
+        if is_key_pressed(KeyCode::Down) {
+            rows += 1;
+            walls.push(vec![false; cols as usize]);
             needs_reset = true;
         }
         if is_key_pressed(KeyCode::Left) && cols > 0 {
@@ -61,20 +61,30 @@ async fn main() {
             }
             needs_reset = true;
         }
+        if is_key_pressed(KeyCode::Right) {
+            cols += 1;
+            walls.iter_mut().for_each(|row| {
+                row.push(false);
+            });
+            needs_reset = true;
+        }
 
         if is_key_down(KeyCode::LeftShift) && is_key_pressed(KeyCode::Equal) {
-            fps += 1.0;
+            fps *= 2.0;
         }
         if is_key_pressed(KeyCode::Minus) {
-            fps -= 1.0;
+            fps /= 2.0;
         }
 
         if is_key_pressed(KeyCode::Space) {
-            if curr_pos == end_pos {
+            if curr_pos == end_pos || no_path {
                 needs_reset = true;
             } else {
                 running = !running;
             }
+        }
+        if is_key_pressed(KeyCode::Enter) {
+            instant = !instant;
         }
 
         let cell_size = (screen_width() / cols as f32).min(screen_height() / rows as f32);
@@ -98,23 +108,28 @@ async fn main() {
         if is_mouse_button_down(MouseButton::Left) {
             let x = (mouse_position().0 / cell_size).floor() as usize;
             let y = (mouse_position().1 / cell_size).floor() as usize;
-            if x != start_pos.x || y != start_pos.y && x < cols as usize && y < rows as usize {
-                walls[x][y] = true;
+            // TODO: check if wall is on important cell
+            if x < cols as usize && y < rows as usize {
+                walls[y][x] = true;
                 needs_reset = true;
             }
         } else if is_mouse_button_down(MouseButton::Right) {
             let x = (mouse_position().0 / cell_size).floor() as usize;
             let y = (mouse_position().1 / cell_size).floor() as usize;
-            if x != start_pos.x || y != start_pos.y && x < cols as usize && y < rows as usize {
-                walls[x][y] = false;
+            if x < cols as usize && y < rows as usize {
+                walls[y][x] = false;
                 needs_reset = true;
             }
+        }
+        if is_key_pressed(KeyCode::Backspace) {
+            walls = vec![vec![false; cols as usize]; rows as usize];
         }
 
         if needs_reset {
             needs_reset = false;
             curr_pos = start_pos;
             running = false;
+            no_path = false;
 
             pathfinders[pathfinder_idx].init(rows, cols, start_pos, end_pos, walls.clone());
         }
@@ -122,30 +137,28 @@ async fn main() {
         if get_time() > last_time + 1.0 / fps && running {
             last_time = get_time();
 
-            match pathfinders[pathfinder_idx].step() {
-                Some(pos) => curr_pos = pos,
-                None => {
-                    curr_pos = end_pos;
-                    running = false;
+            loop {
+                match pathfinders[pathfinder_idx].step() {
+                    Some(pos) => {
+                        curr_pos = pos;
+                        if curr_pos == end_pos {
+                            running = false;
+                        }
+                    }
+                    None => {
+                        curr_pos = start_pos;
+                        running = false;
+                        no_path = true;
+                    }
+                }
+
+                if !instant || !running {
+                    break;
                 }
             }
         }
 
         clear_background(BLACK);
-
-        walls.iter().enumerate().for_each(|(i, row)| {
-            row.iter().enumerate().for_each(|(j, v)| {
-                if *v {
-                    draw_rectangle(
-                        i as f32 * cell_size,
-                        j as f32 * cell_size,
-                        cell_size,
-                        cell_size,
-                        WHITE,
-                    );
-                }
-            })
-        });
 
         pathfinders[pathfinder_idx]
             .get_visited()
@@ -155,8 +168,8 @@ async fn main() {
                 row.into_iter().enumerate().for_each(|(j, v)| {
                     if v {
                         draw_rectangle(
-                            i as f32 * cell_size,
                             j as f32 * cell_size,
+                            i as f32 * cell_size,
                             cell_size,
                             cell_size,
                             Color {
@@ -191,6 +204,24 @@ async fn main() {
                 );
             });
 
+        pathfinders[pathfinder_idx]
+            .get_path()
+            .into_iter()
+            .for_each(|pos| {
+                let x = pos.x as f32 * cell_size;
+                let y = pos.y as f32 * cell_size;
+
+                draw_rectangle(x, y, cell_size, cell_size, PURPLE);
+            });
+
+        draw_rectangle(
+            curr_pos.x as f32 * cell_size,
+            curr_pos.y as f32 * cell_size,
+            cell_size,
+            cell_size,
+            WHITE,
+        );
+
         draw_rectangle(
             start_pos.x as f32 * cell_size,
             start_pos.y as f32 * cell_size,
@@ -206,13 +237,19 @@ async fn main() {
             RED,
         );
 
-        draw_rectangle(
-            curr_pos.x as f32 * cell_size,
-            curr_pos.y as f32 * cell_size,
-            cell_size,
-            cell_size,
-            WHITE,
-        );
+        walls.iter().enumerate().for_each(|(i, row)| {
+            row.iter().enumerate().for_each(|(j, v)| {
+                if *v {
+                    draw_rectangle(
+                        j as f32 * cell_size,
+                        i as f32 * cell_size,
+                        cell_size,
+                        cell_size,
+                        WHITE,
+                    );
+                }
+            })
+        });
 
         (0..=rows).for_each(|i| {
             let y = i as f32 * cell_size;
@@ -225,6 +262,21 @@ async fn main() {
 
             draw_line(x, 0.0, x, rows as f32 * cell_size, 2.0, GRAY);
         });
+
+        draw_text(
+            &format!(
+                "FPS: {}",
+                if instant {
+                    "Instant".to_string()
+                } else {
+                    fps.to_string()
+                }
+            ),
+            20.0,
+            20.0,
+            20.0,
+            WHITE,
+        );
 
         next_frame().await;
     }

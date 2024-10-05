@@ -14,6 +14,8 @@ pub trait Pathfinder {
 
     fn get_frontier(&self) -> Vec<Vector2<usize>>;
 
+    fn get_path(&self) -> Vec<Vector2<usize>>;
+
     fn get_visited(&self) -> Vec<Vec<bool>>;
 
     fn deinit(&mut self);

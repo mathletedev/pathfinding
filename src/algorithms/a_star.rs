@@ -38,6 +38,12 @@ impl PartialOrd for AStarNode {
     }
 }
 
+#[derive(Clone)]
+struct AStarNodeData {
+    g_cost: i32,
+    prev_pos: Option<Vector2<usize>>,
+}
+
 fn distance(pos1: &Vector2<usize>, pos2: &Vector2<usize>) -> i32 {
     let dx = (pos1.x as i32 - pos2.x as i32).abs();
     let dy = (pos1.y as i32 - pos2.y as i32).abs();
@@ -50,7 +56,8 @@ fn distance(pos1: &Vector2<usize>, pos2: &Vector2<usize>) -> i32 {
 
 pub struct AStar {
     frontier: BinaryHeap<AStarNode>,
-    pub state: Vec<Vec<i32>>,
+    curr_node: Option<AStarNode>,
+    state: Vec<Vec<AStarNodeData>>,
 
     rows: i32,
     cols: i32,
@@ -62,6 +69,7 @@ impl Default for AStar {
     fn default() -> Self {
         Self {
             frontier: BinaryHeap::new(),
+            curr_node: None,
             state: vec![],
             rows: 0,
             cols: 0,
@@ -87,8 +95,20 @@ impl Pathfinder for AStar {
             h_cost: distance(&start_pos, &end_pos),
         });
 
-        self.state = vec![vec![i32::MAX; cols as usize]; rows as usize];
-        self.state[start_pos.x][start_pos.y] = 0;
+        self.state = vec![
+            vec![
+                AStarNodeData {
+                    g_cost: i32::MAX,
+                    prev_pos: None,
+                };
+                cols as usize
+            ];
+            rows as usize
+        ];
+        self.state[start_pos.y][start_pos.x] = AStarNodeData {
+            g_cost: 0,
+            prev_pos: None,
+        };
 
         self.rows = rows;
         self.cols = cols;
@@ -97,12 +117,20 @@ impl Pathfinder for AStar {
     }
 
     fn step(&mut self) -> Option<Vector2<usize>> {
-        assert!(!self.frontier.is_empty());
+        let curr_node = match self.frontier.pop() {
+            Some(node) => node,
+            None => {
+                // no path found
+                self.curr_node = None;
+                return None;
+            }
+        };
 
-        let curr_node = self.frontier.pop().unwrap();
+        self.curr_node = Some(curr_node.clone());
 
+        // found end node
         if curr_node.pos == self.end_pos {
-            return None;
+            return Some(self.end_pos);
         }
 
         // cannot move these values out of self
@@ -124,11 +152,11 @@ impl Pathfinder for AStar {
                     let x = curr_node.pos.x as i32 + i;
                     let y = curr_node.pos.y as i32 + j;
 
-                    if x < 0 || y < 0 || x >= rows || y >= cols {
+                    if x < 0 || y < 0 || x >= cols || y >= rows {
                         return None;
                     }
 
-                    if walls[x as usize][y as usize] {
+                    if walls[y as usize][x as usize] {
                         return None;
                     }
 
@@ -145,7 +173,7 @@ impl Pathfinder for AStar {
                         };
 
                     // don't backtrack
-                    if g_cost >= moved_state[pos.x][pos.y] {
+                    if g_cost >= moved_state[pos.y][pos.x].g_cost {
                         return None;
                     }
 
@@ -157,7 +185,10 @@ impl Pathfinder for AStar {
                 })
             })
             .for_each(|node| {
-                self.state[node.pos.x][node.pos.y] = node.g_cost;
+                self.state[node.pos.y][node.pos.x] = AStarNodeData {
+                    g_cost: node.g_cost,
+                    prev_pos: Some(curr_node.pos),
+                };
                 self.frontier.push(node)
             });
 
@@ -172,15 +203,32 @@ impl Pathfinder for AStar {
             .collect()
     }
 
+    fn get_path(&self) -> Vec<Vector2<usize>> {
+        let mut curr_pos = match &self.curr_node {
+            Some(node) => node.pos,
+            None => return vec![],
+        };
+
+        let mut path = vec![curr_pos];
+
+        while let Some(pos) = self.state[curr_pos.y][curr_pos.x].prev_pos {
+            curr_pos = pos;
+            path.push(curr_pos);
+        }
+
+        path
+    }
+
     fn get_visited(&self) -> Vec<Vec<bool>> {
         self.state
             .iter()
-            .map(|row| row.iter().map(|&v| v != i32::MAX).collect())
+            .map(|row| row.iter().map(|v| v.g_cost != i32::MAX).collect())
             .collect()
     }
 
     fn deinit(&mut self) {
         self.frontier.clear();
+        self.curr_node = None;
         self.state.clear();
 
         self.rows = 0;
