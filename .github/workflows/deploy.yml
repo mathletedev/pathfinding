@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
@@ -24,15 +24,16 @@ jobs:
           target: wasm32-unknown-unknown
 
       - name: Build project
-        run: cargo build --target wasm32-unknown-unknown
+        run: cargo build --target wasm32-unknown-unknown --release
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v1
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy
+
+      - name: Move compiled WASM and index.html to the deploy folder
+        run: |
+          mkdir -p deploy
+          cp ./target/wasm32-unknown-unknown/release/CRATENAME.wasm ./deploy/
+          cp ./index.html ./deploy/
