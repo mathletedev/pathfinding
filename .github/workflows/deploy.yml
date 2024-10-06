@@ -28,7 +28,7 @@ jobs:
 
       - name: Move files
         run: |
-          mkdir -p deploy
+          mkdir -p public
           cp ./target/wasm32-unknown-unknown/release/pathfinding.wasm ./public/
           cp ./index.html ./public/
 
