@@ -14,8 +14,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v3
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
@@ -23,17 +23,17 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Build project
+      - name: Build
         run: cargo build --target wasm32-unknown-unknown --release
 
-      - name: Move compiled WASM and index.html to the deploy folder
+      - name: Move files
         run: |
           mkdir -p deploy
-          cp ./target/wasm32-unknown-unknown/release/pathfinding.wasm ./deploy/
-          cp ./index.html ./deploy/
+          cp ./target/wasm32-unknown-unknown/release/pathfinding.wasm ./public/
+          cp ./index.html ./public/
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./deploy
+          publish_dir: ./public
