@@ -26,14 +26,14 @@ jobs:
       - name: Build project
         run: cargo build --target wasm32-unknown-unknown --release
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./deploy
-
       - name: Move compiled WASM and index.html to the deploy folder
         run: |
           mkdir -p deploy
           cp ./target/wasm32-unknown-unknown/release/CRATENAME.wasm ./deploy/
           cp ./index.html ./deploy/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy
